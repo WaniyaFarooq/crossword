@@ -94,16 +94,11 @@ class CrosswordCreator():
         return self.backtrack(dict())
 
     def enforce_node_consistency(self):
-        for var in self.crossword.variables:
+      for var in self.crossword.variables:
             for word in self.domains[var].copy():
                 if len(word) != var.length:
                    self.domains[var].remove(word)
-        """
-        Update `self.domains` such that each variable is node-consistent.
-        (Remove any values that are inconsistent with a variable's unary
-         constraints; in this case, the length of the word.)
-        """
-        raise NotImplementedError
+        
 
     def revise(self, x, y):
         overlap = self.crossword.overlaps[x, y]
@@ -143,7 +138,7 @@ class CrosswordCreator():
         if arcs == None:
           for var1 in self.crossword.variables:
                 for var2 in self.crossword.variables:
-                    if self.crossword.overlaps[var1,var2] is not None:
+                    if var1 != var2 and self.crossword.overlaps[var1,var2] is not None:
                      queue.append((var1,var2))
         else:
           queue = arcs.copy()
@@ -216,6 +211,30 @@ class CrosswordCreator():
         raise NotImplementedError
 
     def order_domain_values(self, var, assignment):
+        pq = []
+        for value in self.domains[var]: 
+            count = 0
+            for neighbor in self.crossword.neighbors(var):
+             if neighbor in assignment:
+              continue
+            overlap = self.crossword.overlaps[var, neighbor]
+            if overlap is None: continue
+            i, j = overlap
+            for neighbor_word in self.domains[neighbor]:
+                if value[i] != neighbor_word[j]:
+                       count+=1
+            pq.append((value,count))
+            # sort by count (second item in tuple)
+        pq.sort(key=lambda x: x[1])
+
+# return only the values, in sorted order
+        return [value for value, count in pq]
+            
+                
+        
+
+
+
         """
         Return a list of values in the domain of `var`, in order by
         the number of values they rule out for neighboring variables.
@@ -223,8 +242,41 @@ class CrosswordCreator():
         that rules out the fewest values among the neighbors of `var`.
         """
         raise NotImplementedError
-
     def select_unassigned_variable(self, assignment):
+        # --- MRV: Minimum Remaining Values ---
+        min_domain_size = float('inf')
+        mrv_vars = []
+
+        for var in self.crossword.variables:
+            if var not in assignment:
+                domain_size = len(self.domains[var])
+
+                if domain_size < min_domain_size:
+                    min_domain_size = domain_size
+                    mrv_vars = [var]
+                elif domain_size == min_domain_size:
+                    mrv_vars.append(var)
+
+        # If only one variable has the smallest domain, return it
+        if len(mrv_vars) == 1:
+            return mrv_vars[0]
+
+        # --- Degree Heuristic: Most Neighbors ---
+        max_degree = -1
+        degree_vars = []
+
+        for var in mrv_vars:
+            degree = len(self.crossword.neighbors(var))
+
+            if degree > max_degree:
+                max_degree = degree
+                degree_vars = [var]
+            elif degree == max_degree:
+                degree_vars.append(var)
+
+        # Return any of the tied highest-degree variables
+        return degree_vars[0]
+
         """
         Return an unassigned variable not already part of `assignment`.
         Choose the variable with the minimum number of remaining values
@@ -235,6 +287,24 @@ class CrosswordCreator():
         raise NotImplementedError
 
     def backtrack(self, assignment):
+         # Check if assignment is complete
+        if len(assignment) == len(self.crossword.variables):
+         return assignment
+         # Select variable using MRV + Degree
+        var = self.select_unassigned_variable(assignment)
+          # Try values using LCV ordering
+        for value in self.order_domain_values(var,assignment):
+            new_assignment = assignment.copy()
+            new_assignment[var]=value
+            if self.consistent(new_assignment):
+                result = self.backtrack(new_assignment)
+                if result is not None:
+                 return result
+
+    # If no value worked, backtrack
+        return None
+
+                
         """
         Using Backtracking Search, take as input a partial assignment for the
         crossword and return a complete assignment if possible to do so.
